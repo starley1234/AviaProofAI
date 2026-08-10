@@ -184,5 +184,23 @@ class TcStore:
             return None
         for key, value in properties.items():
             rev[key] = value
+        if "object_string" in properties:
+            # как в реальном RMS: текст object_string синхронизируется
+            # с HTML-датасетом IMAN_specification (контентом спецификации)
+            self._sync_dataset_content(rev, properties["object_string"])
         rev["last_modified"] = self._now()
         return rev
+
+    def _sync_dataset_content(self, rev: dict, text: str) -> None:
+        for ds_uid in rev.get("datasets", []):
+            ds = self.datasets.get(ds_uid)
+            if not ds:
+                continue
+            for file_uid in ds.get("files", []):
+                f = self.files.get(file_uid)
+                if f and f.get("file_name", "").endswith(".html"):
+                    name = rev.get("object_name", "Требование")
+                    body = "".join(f"<p>{html.escape(p.strip())}</p>"
+                                   for p in text.splitlines() if p.strip())
+                    f["content"] = (f"<html><head><title>{html.escape(name)}</title></head>"
+                                    f"<body><h1>{html.escape(name)}</h1>{body}</body></html>").encode("utf-8")

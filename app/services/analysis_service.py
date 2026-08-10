@@ -32,6 +32,12 @@ class AnalysisService:
             res = self.audit_agent.audit_requirement(req.text)
             stats["checked"] += 1
             issues = res["issues"]
+            # старые замечания закрываем: аудит всегда отражает ТЕКУЩИЙ текст
+            for old in self.db.scalars(select(Analysis).where(
+                    Analysis.kind == "quality_audit", Analysis.requirement_uid == req.uid,
+                    Analysis.status == "open")):
+                old.status = "resolved"
+                old.resolved_at = datetime.now(timezone.utc)
             if not issues:
                 continue
             stats["issues"] += len(issues)
@@ -47,6 +53,11 @@ class AnalysisService:
 
     # ─────────────── RAG-скан несостыковок ───────────────
     def run_conflict_scan(self) -> dict:
+        # старые открытые конфликты закрываем — скан отражает текущее состояние
+        for old in self.db.scalars(select(Analysis).where(Analysis.kind == "conflict",
+                                                          Analysis.status == "open")):
+            old.status = "resolved"
+            old.resolved_at = datetime.now(timezone.utc)
         reqs = self.db.scalars(select(Requirement).where(Requirement.type == "RequirementRevision"))
         candidates = [{"uid": r.uid, "text": r.text, "section_path": r.section_path} for r in reqs]
         conflicts = self.scanner.scan(candidates)

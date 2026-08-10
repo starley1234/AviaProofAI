@@ -1,0 +1,34 @@
+# AviaProofAI: PostgreSQL + сервис аналитики.
+# Заглушку TC поднять рядом:  uvicorn stub_tc.server:app --port 9080
+# (или укажите TC_URL реального Teamcenter в .env)
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: avia
+      POSTGRES_PASSWORD: avia
+      POSTGRES_DB: avia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://avia:avia@db:5432/avia
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m app.cli serve --host 0.0.0.0 --port 8080
+
+volumes:
+  pgdata:

@@ -155,3 +155,26 @@ def test_push_requires_ready_state(seeded):
 
 def test_unknown_requirement_404(seeded):
     assert seeded.get("/api/v1/requirements/rev-NOPE-A").status_code == 404
+
+
+def test_audit_closes_stale_findings_after_fix(seeded):
+    """Полный цикл: слабое место -> правка ИИ -> push -> ре-аудит -> статус ok."""
+    seeded.post("/api/v1/analysis/audit")
+    uid = "rev-REQ-1101-A"
+    assert seeded.get(f"/api/v1/requirements/{uid}").json()["status"] == "weak"
+
+    # ИИ предлагает правку, конструктор отправляет её в TC
+    r = seeded.post(f"/api/v1/requirements/{uid}/drafts", json={"source": "ai"},
+                    headers=seeded.as_user("petrov"))
+    did = r.json()["id"]
+    seeded.post(f"/api/v1/drafts/{did}/submit", headers=seeded.as_user("petrov"))
+    seeded.put("/api/v1/settings/write-access", json={"enabled": True},
+               headers=seeded.as_user("infodba"))
+    seeded.post(f"/api/v1/drafts/{did}/push", headers=seeded.as_user("petrov"))
+
+    # повторная синхронизация подтягивает новый текст, аудит закрывает старое замечание
+    seeded.post("/api/v1/sync/run", json={"spec_id": "SPEC-BRAKE-001", "wait": True})
+    seeded.post("/api/v1/analysis/audit")
+    req = seeded.get(f"/api/v1/requirements/{uid}").json()
+    assert req["status"] == "ok"
+    assert "10 000" in req["text"]

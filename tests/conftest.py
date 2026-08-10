@@ -85,6 +85,15 @@ def pytest_unconfigure():
 
 
 # ─────────────── фикстуры ───────────────
+@pytest.fixture(autouse=True)
+def _fresh_stub():
+    """Заглушка Teamcenter пересоздаётся из фикстуры перед каждым тестом
+    (иначе правки из предыдущих тестов «протекают» в следующие)."""
+    from stub_tc.server import store
+    store.__init__(FIXTURE)
+    yield
+
+
 @pytest.fixture()
 def db():
     """Чистая БД для каждого теста: готовая сессия SQLAlchemy."""

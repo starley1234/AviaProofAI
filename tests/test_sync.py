@@ -94,6 +94,30 @@ def test_change_detection_creates_snapshot(db):
     assert "НОВЫЙ" not in snapshots[0].text  # в снапшоте — состояние ДО изменения
 
 
+def test_push_edit_updates_dataset_content(db):
+    """Write-back object_string синхронизирует HTML-датасет (контент спецификации)."""
+    from app.services.settings_service import SettingsService
+    from app.models import User
+    _run_sync(db)
+    db.add(User(tc_login="petrov", koseven_login="petrov", write_to_tc_allowed=True))
+    SettingsService(db).set_write_allowed_service_wide(True, actor="test")
+    db.commit()
+
+    from app.config import get_settings
+    s = get_settings()
+    c = TeamcenterSoapClient(s.tc_url, timeout=10)
+    try:
+        sync = TeamcenterSync(c, db)
+        sync.push_edit("rev-REQ-1203-A", "Тормозной путь не должен превышать 1200 м.", "petrov")
+    finally:
+        c.close()
+    # повторная синхронизация подхватывает новый текст из датасета
+    run = _run_sync(db)
+    assert run.stats["updated"] == 1
+    req = db.scalar(select(Requirement).where(Requirement.item_id == "REQ-1203"))
+    assert "1200 м" in req.text
+
+
 def test_sync_failure_recorded(db):
     run = _run_sync(db, spec_id="NOT-EXISTS")
     assert run.status == "failed"

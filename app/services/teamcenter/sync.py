@@ -310,6 +310,8 @@ class TeamcenterSync:
         """
         if not self.settings.can_write_to_tc(user_login):
             raise WriteToTcForbidden(user_login)
+        if self.client.token is None:  # клиент мог быть создан без логина
+            self._login()
         updated = self.client.set_properties(requirement_uid, {m.ATTR_OBJECT_STRING: new_text})
         # локальная копия и история
         row = self.db.get(Requirement, requirement_uid)
