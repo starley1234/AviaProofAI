@@ -121,16 +121,52 @@ def _get_requirements(store: TcStore, req: ET.Element, base_url: str):
 
 
 def _get_children(store: TcStore, req: ET.Element, base_url: str):
+    """getChildren c поддержкой пагинации (page_size/start_index) — как реальный TC."""
     input_el = next((c for c in list(req) if localname(c.tag) == "input"), None)
     node_uid = _child_of(input_el, "child_uid") if input_el is not None else ""
+    page_size = int(_child_of(input_el, "page_size") or 0) if input_el is not None else 0
+    start_index = int(_child_of(input_el, "start_index") or 0) if input_el is not None else 0
+    children = store.children(node_uid)
+    if page_size > 0:
+        children = children[start_index:start_index + page_size]
     ns = _ns(m.SVC_STRUCTURE)
     resp = E(ns, "getChildrenResponse")
-    for ch in store.children(node_uid):
+    for ch in children:
         out = S(resp, ns, "output", uid=ch["uid"], child_type=ch["type_name"])
         S(out, ns, "child_uid", ch["uid"])
         S(out, ns, "relation_name", ch["relation_name"])
         S(out, ns, "child_type", ch["type_name"])
         S(out, ns, "sequence_no", ch["sequence_no"])
+    return resp, None
+
+
+def _get_item_and_related(store: TcStore, req: ET.Element, base_url: str):
+    """getItemAndRelatedObjects (REST, проверенный формат заказчика):
+    <infos><itemInfo useIdFirst="1" uid=""><ids name="item_id" value="..."/></itemInfo>
+           <revInfo processing="All" .../></infos>
+    Ответ: <item> + вложенные <item_revision> в revision_list."""
+    ns = _ns(m.SVC_DATA_MGMT)
+    infos = next((c for c in list(req) if localname(c.tag) == "infos"), None)
+    item_id, item_uid = "", ""
+    for ii in list(infos or []):
+        if localname(ii.tag) != "itemInfo":
+            continue
+        item_uid = ii.attrib.get("uid", "")
+        for ids in list(ii):
+            if localname(ids.tag) == "ids" and ids.attrib.get("name") == "item_id":
+                item_id = ids.attrib.get("value", "")
+    items = store.find_items(item_id) if item_id else \
+        ([store.items[item_uid]] if item_uid in store.items else [])
+    resp = E(ns, "GetItemAndRelatedObjectsResponse")
+    for item in items:
+        it = S(resp, ns, "item", uid=item["uid"])
+        S(it, ns, "clientId", "sync")
+        S(it, ns, m.ATTR_ITEM_ID, item["item_id"])
+        S(it, ns, m.ATTR_TYPE_NAME, item["type_name"])
+        S(it, ns, m.ATTR_OBJECT_NAME, item["name"])
+        rl = S(it, ns, "revision_list")
+        for rev_uid in item["revisions"]:
+            rl.append(_revision_element(ns, "item_revision", store.revisions[rev_uid]))
     return resp, None
 
 
@@ -222,10 +258,25 @@ OPERATIONS: dict[str, tuple[str, object]] = {
     m.OP_SET_PROPERTIES: (m.SVC_ITEM, _set_properties),
 }
 
+# REST-операции: URL-имя операции -> обработчик (тот же, что у SOAP, где возможно)
+REST_OPERATIONS: dict[str, tuple[str, object]] = {
+    m.REST_OP_LOGIN: (m.REST_SVC_SESSION, _login),
+    m.REST_OP_LOGOUT: (m.REST_SVC_SESSION, _logout),
+    m.REST_OP_GET_ITEM_AND_RELATED: (m.REST_SVC_DATA_MGMT, _get_item_and_related),
+    m.REST_OP_GET_PROPERTIES: (m.REST_SVC_DATA_MGMT, _get_properties),
+    m.REST_OP_GET_REQUIREMENTS: (m.REST_SVC_REQUIREMENT, _get_requirements),
+    m.REST_OP_GET_CHILDREN: (m.REST_SVC_STRUCTURE, _get_children),
+    m.REST_OP_FIND_DATASETS: (m.REST_SVC_DATASET, _find_datasets),
+    m.REST_OP_GET_CONTENTS: (m.REST_SVC_DATASET, _get_contents),
+    m.REST_OP_GET_FILE_TICKET: (m.REST_SVC_FILE, _get_file_ticket),
+    m.REST_OP_FIND_RELATIONS: (m.REST_SVC_RELATION, _find_relations),
+    m.REST_OP_SET_PROPERTIES: (m.REST_SVC_DATA_MGMT, _set_properties),
+}
+
 
 def dispatch(store: TcStore, operation: str, req_body: ET.Element,
              base_url: str, token: str | None) -> tuple[ET.Element | None, str | None, str | None]:
-    """Возвращает (response_element, header_token, ошибка)."""
+    """Возвращает (response_element, header_token, ошибка). SOAP-диспетчер."""
     if operation not in OPERATIONS:
         return None, None, f"Неизвестная операция: {operation}"
     service, handler = OPERATIONS[operation]
@@ -235,4 +286,21 @@ def dispatch(store: TcStore, operation: str, req_body: ET.Element,
     resp, header = handler(store, req_body, base_url)
     if resp is None:
         return None, None, header or f"Ошибка выполнения {operation}"
+    return resp, header, None
+
+
+def dispatch_rest(store: TcStore, operation: str, req_body: ET.Element,
+                  base_url: str) -> tuple[ET.Element | None, str | None, str | None]:
+    """REST-диспетчер: операции из REST_OPERATIONS, login выдаёт сессию (cookie)."""
+    if operation not in REST_OPERATIONS:
+        return None, None, f"Неизвестная REST-операция: {operation}"
+    service, handler = REST_OPERATIONS[operation]
+    resp, header = handler(store, req_body, base_url)
+    if resp is None:
+        return None, None, header or f"Ошибка выполнения {operation}"
+    if operation == m.REST_OP_LOGIN:
+        # header здесь — токен, уже сохранённый в store.tokens;
+        # используем его как значение cookie ASP.NET_SessionId
+        if not header:
+            return None, None, "REST login не вернул сессию"
     return resp, header, None

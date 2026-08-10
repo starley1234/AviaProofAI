@@ -129,3 +129,59 @@ DATASET_TYPE_TEXT = "TextDataset"
 # Формат файла контента (расширение) -> MIME, по которому решаем, как читать
 CONTENT_MIME_HTML = "text/html"
 CONTENT_MIME_TEXT = "text/plain"
+
+# ═══════════════════════════ REST-протокол (RestServices) ═══════════════════════════
+# Проверенный рабочий формат (см. koseven-клиент заказчика):
+#   POST {tc_url}/RestServices/{ServiceName}/{OperationName}
+#   <RequestEnvelope xmlns="http://teamcenter.com/Schemas/Soa/2006-09/ClientContext">
+#     <header/><body><bodystring><![CDATA[ <OperationNameInput ...>...</OperationNameInput> ]]></bodystring></body>
+#   </RequestEnvelope>
+#   Аутентификация: cookie ASP.NET_SessionId (выдаётся login'ом).
+# Ответ: <ResponseEnvelope><header/><body><bodystring><![CDATA[ <OperationNameResponse>...]]></bodystring></body></ResponseEnvelope>
+REST_ENVELOPE_NS = "http://teamcenter.com/Schemas/Soa/2006-09/ClientContext"
+REST_PATH = "RestServices"
+REST_SESSION_COOKIE = "ASP.NET_SessionId"
+
+# REST-версии сервисов (отличаются от SOA-версий!):
+REST_SVC_SESSION = "Core-2007-01-Session"            # REST login/logout — то же имя
+REST_SVC_DATA_MGMT = "Core-2008-06-DataManagement"   # REST: 2008-06 (в SOA — 2006-03!)
+REST_SVC_ITEM_FINDER = "Item-2006-06-Finder"
+REST_SVC_ITEM = "Item-2006-06-Item"
+REST_SVC_STRUCTURE = "Structure-2007-01-Structure"
+REST_SVC_REQUIREMENT = "Requirement-2011-06-Requirement"
+REST_SVC_DATASET = "Dataset-2006-06-Dataset"
+REST_SVC_FILE = "FileManagement-2007-01-File"
+REST_SVC_RELATION = "Relation-2006-06-Relation"
+
+# Имена операций REST (URL-часть, PascalCase в bodystring):
+REST_OP_LOGIN = "login"
+REST_OP_LOGOUT = "logout"
+REST_OP_GET_ITEM_AND_RELATED = "getItemAndRelatedObjects"   # проверено на проде
+REST_OP_GET_PROPERTIES = "getProperties"
+REST_OP_GET_REQUIREMENTS = "getRequirements"
+REST_OP_GET_CHILDREN = "getChildren"
+REST_OP_FIND_DATASETS = "findDatasets"
+REST_OP_GET_CONTENTS = "getContents"
+REST_OP_GET_FILE_TICKET = "getFileReadTicket"
+REST_OP_FIND_RELATIONS = "findRelations"
+REST_OP_SET_PROPERTIES = "setProperties"
+
+# Пути ответов REST (localname, регистр — PascalCase).
+# ВАЖНО: пути заданы ОТ КОРНЯ ОТВЕТА (сам корневой элемент не включается):
+#   <GetItemAndRelatedObjectsResponse> — корень,
+#   ("item",) — его прямые дети.
+# Если реальный TC отвечает иначе — править ЗДЕСЬ.
+REST_ITEM_PATH = ("item",)
+REST_GET_PROPERTIES_PATH = ("output", "object")
+REST_GET_REQUIREMENTS_PATH = ("requirement",)
+REST_CHILDREN_PATH = ("output",)
+REST_DATASETS_PATH = ("output", "dataset")
+REST_CONTENTS_PATH = ("output",)
+REST_TICKET_PATH = ("ticket",)
+REST_RELATIONS_PATH = ("output", "relation")
+REST_SET_PROPERTIES_PATH = ("output",)
+
+# Пагинация getChildren (большие спецификации): параметры внутри input
+PAGE_SIZE_PARAM = "page_size"      # сколько детей за раз (сервер вернёт не больше)
+START_INDEX_PARAM = "start_index"  # с какого ребёнка продолжать (0, page_size, ...)
+DEFAULT_PAGE_SIZE = 500

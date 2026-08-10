@@ -310,7 +310,8 @@ class TeamcenterSync:
         """
         if not self.settings.can_write_to_tc(user_login):
             raise WriteToTcForbidden(user_login)
-        if self.client.token is None:  # клиент мог быть создан без логина
+        # клиент мог быть создан без логина (SOAP: token; REST: session_id)
+        if getattr(self.client, "token", None) is None and not getattr(self.client, "session_id", ""):
             self._login()
         updated = self.client.set_properties(requirement_uid, {m.ATTR_OBJECT_STRING: new_text})
         # локальная копия и история

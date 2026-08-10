@@ -75,6 +75,7 @@ def pytest_configure():
     os.environ.setdefault("TC_USER", "infodba")
     os.environ.setdefault("TC_PASSWORD", "infodba")
     os.environ.setdefault("TC_WRITE_ALLOWED", "false")
+    os.environ.setdefault("TC_PROTOCOL", "rest")  # как в проде заказчика (RestServices)
     os.environ.setdefault("LLM_API_KEY", "")  # пусто -> rule-based (детерминированные тесты)
     _start_pg()
     _start_stub()

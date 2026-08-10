@@ -18,12 +18,22 @@ class Settings(BaseSettings):
     # --- PostgreSQL ---
     database_url: str = "postgresql+psycopg2://avia:avia@localhost:5432/avia"
 
-    # --- Teamcenter 11 (SOA) ---
+    # --- Teamcenter 11 ---
     tc_url: str = "http://org-tc2:8080/tc/services/"
     tc_user: str = "infodba"
     tc_password: str = "infodba"
     tc_spec_id: str = "SPEC-BRAKE-001"           # корневая спецификация требований
-    tc_timeout: float = 30.0
+    tc_timeout: float = 60.0                     # таймаут чтения ответа, сек
+    tc_connect_timeout: float = 10.0             # таймаут установки соединения, сек
+    tc_retries: int = 2                          # ретраи сетевых ошибок/5xx (backoff 0.5s, 1s)
+    tc_page_size: int = 500                      # пагинация getChildren
+    # Протокол: rest (RestServices + cookie ASP.NET_SessionId — как в рабочем
+    # PHP-клиенте) или soap (AuthenticationToken в SOAP-Header).
+    tc_protocol: str = "rest"
+    tc_session_id: str = ""                      # готовая сессия REST (если уже получена извне)
+    tc_verify_ssl: bool = True                   # проверять TLS-сертификат TC
+    tc_max_content_bytes: int = 10 * 1024 * 1024  # лимит файла контента датасета
+    tc_allow_external_files: bool = False         # ticket на чужой хост — запрещён (SSRF)
 
     # --- Запись в Teamcenter: глобальный выключатель (безопасный дефолт: ВЫКЛ) ---
     tc_write_allowed: bool = False

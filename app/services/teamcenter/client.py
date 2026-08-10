@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -37,19 +38,65 @@ class TcRelation:
 
 
 class TeamcenterSoapClient:
-    """Тонкий транспорт: знает mapping.py и умеет звать операции SOA."""
+    """Тонкий транспорт: знает mapping.py и умеет звать операции SOA.
 
-    def __init__(self, base_url: str, timeout: float = 30.0, verify: bool = True):
+    Устойчивость: таймауты (connect/read), ретраи с backoff, автоперелогин при
+    истечении сессии, пагинация getChildren, лимит размера контента, защита
+    от скачивания файлов с посторонних хостов (SSRF).
+    """
+
+    def __init__(self, base_url: str, timeout: float = 30.0, connect_timeout: float = 10.0,
+                 retries: int = 2, page_size: int = m.DEFAULT_PAGE_SIZE,
+                 verify: bool = True, max_content_bytes: int = 10 * 1024 * 1024,
+                 allow_external_files: bool = False):
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
-        self._http = httpx.Client(timeout=timeout, verify=verify)
+        self.connect_timeout = connect_timeout
+        self.retries = retries
+        self.page_size = page_size
+        self.max_content_bytes = max_content_bytes
+        self.allow_external_files = allow_external_files
+        self._http = httpx.Client(timeout=(connect_timeout, timeout), verify=verify,
+                                  follow_redirects=False)
         self.token: str | None = None
+        self._credentials: tuple[str, str, str, str] | None = None
+        self._allowed_hosts = {httpx.URL(base_url).host}
 
     # ─────────────── низкий уровень ───────────────
     def call(self, service: str, operation: str, params: dict | None = None) -> "SoapResponse":
         params = params or {}
         envelope = build_envelope(service, operation, params, token=self.token)
-        resp = self._http.post(self.base_url, content=envelope, headers={"Content-Type": "text/xml; charset=utf-8"})
+        try:
+            resp = self._post_with_retry(envelope)
+            return self._parse(resp)
+        except TcAuthError:
+            if operation != m.OP_LOGIN and self._credentials:
+                # сессия истекла — перелогиниваемся и повторяем один раз
+                self.login(*self._credentials)
+                return self._parse(self._post_with_retry(
+                    build_envelope(service, operation, params, token=self.token)))
+            raise
+
+    def _post_with_retry(self, envelope: str) -> httpx.Response:
+        last_err: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                resp = self._http.post(self.base_url, content=envelope,
+                                       headers={"Content-Type": "text/xml; charset=utf-8"})
+                if resp.status_code < 500:
+                    return resp
+                # XML-ошибка (SOAP Fault/error) — бизнес-ошибка, не ретраим:
+                # пусть _parse поднимет типизированное исключение
+                if resp.text.lstrip().startswith("<?xml"):
+                    return resp
+                last_err = TcSoapError(f"HTTP {resp.status_code} от Teamcenter: {resp.text[:300]}")
+            except httpx.TransportError as e:
+                last_err = TcSoapError(f"Сетевая ошибка Teamcenter: {e}")
+            if attempt < self.retries:
+                time.sleep(0.5 * (2 ** attempt))  # backoff: 0.5s, 1s
+        raise last_err  # type: ignore[misc]
+
+    def _parse(self, resp: httpx.Response) -> "SoapResponse":
         # SOAP Fault'ы реальный TC отдаёт и с HTTP 500 — пробуем разобрать тело
         if resp.status_code != 200 and resp.text.lstrip().startswith("<?xml"):
             try:
@@ -85,6 +132,7 @@ class TeamcenterSoapClient:
 
     # ─────────────── авторизация ───────────────
     def login(self, user: str, password: str, group: str = "", role: str = "") -> str:
+        self._credentials = (user, password, group, role)
         resp = self.call(m.SVC_SESSION, m.OP_LOGIN, {
             "user": user, "password": password, "group": group, "role": role, "discriminator": None,
         })
@@ -131,20 +179,34 @@ class TeamcenterSoapClient:
 
     # ─────────────── структура (дерево спецификации) ───────────────
     def get_children(self, node_uid: str) -> list[TcItem]:
-        """Дети узла: <output><child_uid/><relation_name/><child_type/><sequence_no/></output>."""
-        resp = self.call(m.SVC_STRUCTURE, m.OP_GET_CHILDREN, {"input": {"child_uid": node_uid}})
+        """Дети узла с пагинацией (page_size/start_index) — большие спецификации.
+
+        Если сервер игнорирует пагинацию — вернёт всех детей сразу, цикл
+        завершится после первой итерации.
+        """
         children: list[TcItem] = []
-        for el in resp.find_all(m.CHILDREN_PATH):
-            uid = el.attrib.get("uid") or next(
-                (c.text or "" for c in list(el) if localname(c.tag) == "child_uid"), "")
-            child = TcItem(uid=uid, type_name=el.attrib.get("child_type", ""))
-            for c in list(el):
-                name = localname(c.tag)
-                if c.text and name in ("relation_name", "child_uid", "child_type"):
-                    setattr(child, name if name != "child_uid" else "uid", c.text.strip())
-                elif name == "sequence_no" and c.text:
-                    child.sequence_no = int(c.text.strip())
-            children.append(child)
+        start = 0
+        while True:
+            resp = self.call(m.SVC_STRUCTURE, m.OP_GET_CHILDREN, {
+                "input": {"child_uid": node_uid,
+                          m.PAGE_SIZE_PARAM: self.page_size,
+                          m.START_INDEX_PARAM: start}})
+            page: list[TcItem] = []
+            for el in resp.find_all(m.CHILDREN_PATH):
+                uid = el.attrib.get("uid") or next(
+                    (c.text or "" for c in list(el) if localname(c.tag) == "child_uid"), "")
+                child = TcItem(uid=uid, type_name=el.attrib.get("child_type", ""))
+                for c in list(el):
+                    name = localname(c.tag)
+                    if c.text and name in ("relation_name", "child_uid", "child_type"):
+                        setattr(child, name if name != "child_uid" else "uid", c.text.strip())
+                    elif name == "sequence_no" and c.text:
+                        child.sequence_no = int(c.text.strip())
+                page.append(child)
+            children.extend(page)
+            if len(page) < self.page_size or not page:
+                break
+            start += len(page)
         return children
 
     # ─────────────── контент (IMAN_specification) ───────────────
@@ -167,9 +229,18 @@ class TeamcenterSoapClient:
         return resp.text(m.TICKET_PATH)
 
     def download_file(self, ticket_url: str) -> bytes:
+        """Скачивание файла контента по ticket (защита от SSRF + лимит размера)."""
+        ticket = httpx.URL(ticket_url)
+        if not self.allow_external_files and ticket.host not in self._allowed_hosts:
+            raise TcSoapError(f"Отказано: ticket ведёт на посторонний хост {ticket.host} "
+                              f"(разрешены: {sorted(self._allowed_hosts)}); "
+                              "отключить проверку: TC_ALLOW_EXTERNAL_FILES=true")
         r = self._http.get(ticket_url)
         if r.status_code != 200:
             raise TcSoapError(f"HTTP {r.status_code} при скачивании файла контента: {r.text[:200]}")
+        if len(r.content) > self.max_content_bytes:
+            raise TcSoapError(f"Файл контента больше лимита "
+                              f"{self.max_content_bytes} байт (TC_MAX_CONTENT_BYTES)")
         return r.content
 
     # ─────────────── связи (трассируемость) ───────────────

@@ -31,11 +31,11 @@ def cmd_init_db(_):
 
 def cmd_sync(args):
     from app.config import get_settings
-    from app.services.teamcenter.client import TeamcenterSoapClient
+    from app.services.teamcenter.factory import build_tc_client
     from app.services.teamcenter.sync import TeamcenterSync
     s = get_settings()
     with _db() as db:
-        client = TeamcenterSoapClient(s.tc_url, timeout=s.tc_timeout)
+        client = build_tc_client(s)
         try:
             run = TeamcenterSync(client, db).run(args.spec or s.tc_spec_id)
         finally:

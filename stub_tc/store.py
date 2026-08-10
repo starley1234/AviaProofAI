@@ -131,6 +131,12 @@ class TcStore:
         self.tokens[token] = user
         return {**u, "token": token}
 
+    def create_session(self, user: str) -> str:
+        """Сессия REST (значение cookie ASP.NET_SessionId)."""
+        sid = f"session-{user}-{secrets.token_hex(6)}"
+        self.tokens[sid] = user
+        return sid
+
     def logout(self, token: str) -> None:
         self.tokens.pop(token, None)
 

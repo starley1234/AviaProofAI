@@ -9,7 +9,6 @@ from app.api.deps import get_actor, get_db, require_api_key
 from app.api.services import get_llm
 from app.config import get_settings
 from app.models import RequirementDraft
-from app.services.teamcenter.client import TeamcenterSoapClient
 from app.services.teamcenter.sync import TeamcenterSync
 from app.services.twin import TwinError, TwinService
 
@@ -19,13 +18,14 @@ router = APIRouter(tags=["twin"], dependencies=[Depends(require_api_key)])
 def _twin(db: Session) -> TwinService:
     """TwinService с колбэком записи в Teamcenter (проверка прав внутри push_edit)."""
     from app.services.settings_service import SettingsService, WriteToTcForbidden
+    from app.services.teamcenter.factory import build_tc_client
     s = get_settings()
 
     def push(uid: str, text: str, user: str) -> dict:
         # проверяем права ДО подключения, чтобы не логиниться зря
         if not SettingsService(db).can_write_to_tc(user):
             raise WriteToTcForbidden(user)
-        client = TeamcenterSoapClient(s.tc_url, timeout=s.tc_timeout)
+        client = build_tc_client(s)
         try:
             client.login(s.tc_user, s.tc_password)
             return TeamcenterSync(client, db).push_edit(uid, text, user)

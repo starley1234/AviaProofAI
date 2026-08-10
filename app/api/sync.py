@@ -25,11 +25,12 @@ class SyncRequest(BaseModel):
 
 
 def _run_sync(run_id: int, spec_id: str) -> None:
-    """Фоновая синхронизация (своя сессия БД и свой SOAP-клиент)."""
+    """Фоновая синхронизация (своя сессия БД и свой клиент Teamcenter)."""
     from app.config import get_settings
+    from app.services.teamcenter.factory import build_tc_client
     s = get_settings()
     with session_scope() as db:
-        client = TeamcenterSoapClient(s.tc_url, timeout=s.tc_timeout)
+        client = build_tc_client(s)
         try:
             TeamcenterSync(client, db).run(spec_id)
         finally:
@@ -38,13 +39,14 @@ def _run_sync(run_id: int, spec_id: str) -> None:
 
 @router.post("/run")
 def run_sync(req: SyncRequest, db: Session = Depends(get_db)):
+    from app.services.teamcenter.factory import build_tc_client
     spec_id = req.spec_id or get_settings().tc_spec_id
     run = SyncRun(status="running", spec_uid=spec_id)
     db.add(run)
     db.flush()
     if req.wait:
         # синхронно: та же сессия
-        client = TeamcenterSoapClient(get_settings().tc_url, timeout=get_settings().tc_timeout)
+        client = build_tc_client()
         try:
             result = TeamcenterSync(client, db).run(spec_id)
         finally:

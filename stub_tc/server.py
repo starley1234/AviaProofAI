@@ -22,8 +22,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
 from app.services.teamcenter import mapping as m
+from app.services.teamcenter.rest import rest_schema_ns
 from app.services.teamcenter.soap import localname
-from stub_tc.handlers import E, S, dispatch
+from stub_tc.handlers import E, S, REST_OPERATIONS, dispatch, dispatch_rest
 from stub_tc.store import TcStore
 
 app = FastAPI(title="Teamcenter 11 Stub (AviaProofAI)", docs_url=None, redoc_url=None)
@@ -88,6 +89,74 @@ def _fault_response(message: str) -> Response:
         f'</soapenv:Envelope>\n'
     )
     return Response(content=fault, media_type="text/xml; charset=utf-8", status_code=500)
+
+
+# ─────────────────────────── REST-точка (RestServices) ───────────────────────────
+@app.post("/tc/services/RestServices/{service}/{operation}")
+async def tc_rest_services(service: str, operation: str, request: Request):
+    """REST-протокол TC: RequestEnvelope -> ResponseEnvelope (bodystring CDATA).
+
+    Формат — по рабочему PHP-клиенту заказчика. Аутентификация — cookie
+    ASP.NET_SessionId (выдаётся login'ом через Set-Cookie).
+    """
+    raw = await request.body()
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as e:
+        return _rest_fault(f"Некорректный RequestEnvelope: {e}")
+
+    bodystring = None
+    for el in root.iter():
+        if localname(el.tag) == "bodystring":
+            bodystring = el.text or ""
+            break
+    if bodystring is None:
+        return _rest_fault("В RequestEnvelope нет bodystring")
+    try:
+        body_el = ET.fromstring(bodystring.strip())
+    except ET.ParseError as e:
+        return _rest_fault(f"Некорректный bodystring: {e}")
+
+    # REST-операции (getItemAndRelatedObjects и др.) могут иметь PascalCase-имена
+    op = operation
+    if op not in REST_OPERATIONS:
+        return _rest_fault(f"Неизвестная REST-операция: {operation}")
+
+    session_id = request.cookies.get(m.REST_SESSION_COOKIE, "")
+    if op != m.REST_OP_LOGIN and store.auth_user(session_id) is None:
+        return _rest_fault("Authentication failed: требуется cookie ASP.NET_SessionId")
+
+    resp_el, header_token, error = dispatch_rest(store, op, body_el, str(request.base_url))
+    if error:
+        return _rest_fault(error)
+
+    # корень ответа -> PascalCase (getChildrenResponse -> GetChildrenResponse)
+    root_name = localname(resp_el.tag)[0].upper() + localname(resp_el.tag)[1:]
+    resp_el.tag = f"{{{rest_schema_ns(service)}}}{root_name}"
+    inner = ET.tostring(resp_el, encoding="unicode")
+    xml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        f'<ResponseEnvelope xmlns="{m.REST_ENVELOPE_NS}">\n'
+        "  <header/>\n"
+        f"  <body><bodystring><![CDATA[{inner}]]></bodystring></body>\n"
+        "</ResponseEnvelope>\n"
+    )
+    headers = {}
+    if op == m.REST_OP_LOGIN and header_token:
+        headers["Set-Cookie"] = f"{m.REST_SESSION_COOKIE}={header_token}; path=/"
+    return Response(content=xml, media_type="application/xml; charset=utf-8", headers=headers)
+
+
+def _rest_fault(message: str) -> Response:
+    inner = f'<error xmlns="{m.REST_ENVELOPE_NS}">{message}</error>'
+    xml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        f'<ResponseEnvelope xmlns="{m.REST_ENVELOPE_NS}">\n'
+        "  <header/>\n"
+        f"  <body><bodystring><![CDATA[{inner}]]></bodystring></body>\n"
+        "</ResponseEnvelope>\n"
+    )
+    return Response(content=xml, media_type="application/xml; charset=utf-8", status_code=500)
 
 
 # ─────────────────────────── файлы контента (ticket) ───────────────────────────

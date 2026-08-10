@@ -11,11 +11,13 @@
 
 ## Возможности
 
-* **ETL (Python):** `TeamcenterSync` — SOA-авторизация, рекурсивный обход
-  спецификации, выгрузка `RequirementRevision`, извлечение текста из
-  HTML/Text-датасетов по связи `IMAN_specification`, связи
-  `TC_Requirement_Trace_Relation`; PostgreSQL + `jsonb` (`raw_data`,
-  `traceability_links`), версионность состояний (снапшоты).
+* **ETL (Python):** `TeamcenterSync` — рекурсивный обход спецификации,
+  выгрузка `RequirementRevision`, извлечение текста из HTML/Text-датасетов по
+  связи `IMAN_specification`, связи `TC_Requirement_Trace_Relation`;
+  PostgreSQL + `jsonb` (`raw_data`, `traceability_links`), версионность
+  состояний (снапшоты). Протоколы: **REST** (`RestServices`, cookie
+  `ASP.NET_SessionId`, `getItemAndRelatedObjects` — как в рабочем PHP-клиенте)
+  по умолчанию и **SOAP** (`TC_PROTOCOL=rest|soap`).
 * **LLM-ядро:** аудит качества (атомарность/непротиворечивость/проверяемость,
   DO-178C), RAG-поиск противоречий между разделами, предложение формулировок
   правок, impact-анализ. OpenAI-совместимый endpoint или встроенные эвристики
@@ -81,11 +83,13 @@ tests/                   контракт SOAP, ETL, LLM, API, guardrails, пр�
 ## Документация
 
 * [docs/architecture.md](docs/architecture.md) — общая схема и потоки
-* [docs/teamcenter.md](docs/teamcenter.md) — **взаимодействие с TC 11: формат,
-  операции, как править под свою инсталляцию**
+* [docs/teamcenter.md](docs/teamcenter.md) — **взаимодействие с TC 11: REST и
+  SOAP, форматы, как править под свою инсталляцию**
 * [docs/database.md](docs/database.md) — схема БД и модель версионности
 * [docs/api.md](docs/api.md) — контракт REST API для Koseven
 * [docs/llm.md](docs/llm.md) — LLM-ядро и RAG
+* [docs/hardening.md](docs/hardening.md) — «железобетонность»: что сделано и
+  чек-лист для боевого внедрения
 * [koseven/README.md](koseven/README.md) — установка PHP-модуля
 
 ## Запись в Teamcenter (важно)
