@@ -52,7 +52,7 @@ def _login(store: TcStore, req: ET.Element, base_url: str):
     password = _child_of(req, "password")
     result = store.login(user, password)
     if result is None:
-        return None, "Неверное имя пользователя или пароль"
+        return None, "Authentication failed: неверное имя пользователя или пароль"
     ns = _ns(m.SVC_SESSION)
     resp = E(ns, "loginResponse")
     u = S(resp, ns, "user", uid=f"user-{user}")

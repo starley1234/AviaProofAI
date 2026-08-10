@@ -156,19 +156,19 @@ class RuleBasedClient(LLMClient):
                                            f"от {maxv['value']} до {minv['value']} {maxv['unit']} "
                                            "и зафиксировать его в обоих разделах"),
                         }
-        # 3) полярность: «должен X» vs «не должен X»
-        verb_a = re.findall(rf"{REQ_VERB}\s+(.+?)[.;]", a.lower())
-        verb_b = re.findall(rf"{REQ_VERB}\s+(.+?)[.;]", b.lower())
-        for va in verb_a:
-            for vb in verb_b:
-                na, nb = va.strip(), vb.strip()
-                if na.startswith("не ") and nb == na[3:].strip():
+        # 3) полярность: «должен X» vs «не должен X» (отрицание может стоять перед глаголом)
+        def clauses(text: str) -> list[tuple[bool, str]]:
+            return [(bool(m.group(1)), m.group(2).strip())
+                    for m in re.finditer(rf"(не\s+)?{REQ_VERB}\s+(.+?)[.;]", text.lower())]
+
+        for neg_a, va in clauses(a):
+            for neg_b, vb in clauses(b):
+                if va == vb and neg_a != neg_b:
+                    label_a = f"{'не ' if neg_a else ''}должен {va}"
+                    label_b = f"{'не ' if neg_b else ''}должен {vb}"
                     return {"contradiction": True, "type": "polarity",
-                            "explanation": f"Требование A запрещает «{na}», требование B требует «{nb}»",
-                            "suggestion": "Устранить противоположные требования, согласовать с вышестоящим"}
-                if nb.startswith("не ") and na == nb[3:].strip():
-                    return {"contradiction": True, "type": "polarity",
-                            "explanation": f"Требование B запрещает «{nb}», требование A требует «{na}»",
+                            "explanation": f"Требование A: «{label_a}», требование B: «{label_b}» — "
+                                           "противоположные предписания",
                             "suggestion": "Устранить противоположные требования, согласовать с вышестоящим"}
         return {"contradiction": False, "type": "none",
                 "explanation": "Противоречий не обнаружено", "suggestion": ""}
@@ -192,7 +192,10 @@ class RuleBasedClient(LLMClient):
                 if not fixed:
                     rationale.append("Неопределённая формулировка: требуется количественный критерий")
             elif iss["type"] == "atomicity":
-                parts = re.split(rf"(?<=[.;])\s+(?={REQ_VERB})", new_text, flags=re.IGNORECASE)
+                # разбивка после «;»/«.» на клаузы, содержащие глагол-требование
+                # (между знаком и глаголом допускается подлежащее: «; система должна ...»)
+                split_re = re.compile(rf"(?<=[.;])\s+(?=(?:[а-яёa-z-]+\s){{0,8}}{REQ_VERB})", re.IGNORECASE)
+                parts = split_re.split(new_text)
                 if len(parts) > 1:
                     new_text = "\n".join(f"{i + 1}. {p.strip()}" for i, p in enumerate(parts))
                     rationale.append(f"Требование разбито на {len(parts)} атомарных утверждений")

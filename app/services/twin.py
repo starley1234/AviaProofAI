@@ -51,6 +51,7 @@ class TwinService:
         )
         self.db.add(draft)
         self.db.flush()
+        self._refresh_statuses()
         return draft
 
     def create_user_draft(self, requirement_uid: str, text: str, rationale: str,
@@ -67,6 +68,7 @@ class TwinService:
         )
         self.db.add(draft)
         self.db.flush()
+        self._refresh_statuses()
         return draft
 
     # ─────────────── редактирование ───────────────
@@ -115,4 +117,10 @@ class TwinService:
         updated = self.push_callback(draft.requirement_uid, draft.current_text, actor)
         draft.status = DRAFT_PUSHED
         draft.pushed_at = datetime.now(timezone.utc)
+        self._refresh_statuses()
         return draft
+
+    def _refresh_statuses(self) -> None:
+        """Обновить статусы дашборда (needs_edit и т.п.) после изменения правок."""
+        from app.services.analysis_service import AnalysisService
+        AnalysisService(self.db).refresh_statuses()

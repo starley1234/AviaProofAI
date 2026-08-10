@@ -243,17 +243,17 @@ class TeamcenterSync:
         stats = {"created": 0, "updated": 0, "unchanged": 0, "errors": 0}
         run_id = self.db.execute(select(SyncRun.id).order_by(SyncRun.id.desc())).scalar()
         for rec in records:
-            existed = self.db.get(Requirement, rec.uid) is not None
+            row = self.db.get(Requirement, rec.uid)
+            old_hash = row.text_hash if row is not None else None
             try:
                 self._upsert_one(rec, run_id)
             except Exception:  # noqa: BLE001 — одна запись не должна ронять весь прогон
                 stats["errors"] += 1
                 continue
-            if not existed:
+            if row is None:
                 stats["created"] += 1
             else:
-                h = content_hash(rec.text)
-                stats["updated" if self.db.get(Requirement, rec.uid).text_hash != h else "unchanged"] += 1
+                stats["updated" if old_hash != content_hash(rec.text) else "unchanged"] += 1
         return stats
 
     def _upsert_one(self, rec: RequirementRecord, run_id: int | None) -> None:

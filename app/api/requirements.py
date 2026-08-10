@@ -38,7 +38,8 @@ def list_requirements(status: str | None = None, search: str | None = None,
     if status:
         q = q.where(Requirement.status == status)
     if section:
-        q = q.where(Requirement.section_path.like(f"{section}%"))
+        # строго внутри раздела: «2» -> «2.1», «2.2», ... (сам раздел не включаем)
+        q = q.where(Requirement.section_path.like(f"{section}.%"))
     if search:
         like = f"%{search}%"
         q = q.where(or_(Requirement.item_id.ilike(like), Requirement.name.ilike(like),

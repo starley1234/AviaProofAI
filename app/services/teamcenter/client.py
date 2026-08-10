@@ -50,6 +50,14 @@ class TeamcenterSoapClient:
         params = params or {}
         envelope = build_envelope(service, operation, params, token=self.token)
         resp = self._http.post(self.base_url, content=envelope, headers={"Content-Type": "text/xml; charset=utf-8"})
+        # SOAP Fault'ы реальный TC отдаёт и с HTTP 500 — пробуем разобрать тело
+        if resp.status_code != 200 and resp.text.lstrip().startswith("<?xml"):
+            try:
+                return parse_soap_response(resp.text)
+            except (TcSoapError, TcAuthError):
+                raise
+            except Exception:
+                pass
         if resp.status_code != 200:
             raise TcSoapError(f"HTTP {resp.status_code} от Teamcenter: {resp.text[:300]}")
         return parse_soap_response(resp.text)
