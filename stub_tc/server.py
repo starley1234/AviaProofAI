@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from app.services.teamcenter import mapping as m
 from app.services.teamcenter.rest import rest_schema_ns
@@ -145,6 +145,46 @@ async def tc_rest_services(service: str, operation: str, request: Request):
     if op == m.REST_OP_LOGIN and header_token:
         headers["Set-Cookie"] = f"{m.REST_SESSION_COOKIE}={header_token}; path=/"
     return Response(content=xml, media_type="application/xml; charset=utf-8", headers=headers)
+
+
+# ─────────────────────────── JSON REST-точка (JsonRestServices) ───────────────────────────
+@app.post("/tc/services/JsonRestServices/{service}/{operation}")
+async def tc_json_rest_services(service: str, operation: str, request: Request):
+    """JSON REST: формат из рабочего PHP-клиента заказчика.
+
+    login: {"header": {"state": {}, "policy": {}},
+            "body": {"credentials": {"user", "password", "role", "descrimator",
+                                     "locale", "group"}}}
+    Сессия — cookie ASP.NET_SessionId (Set-Cookie). Ответ — {"header": {}, "body": {...}}.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"header": {}, "body": {"error": "Некорректный JSON"}},
+                            status_code=400)
+
+    if operation == "logout" and service == m.JSON_REST_SVC_SESSION:
+        sid = request.cookies.get(m.REST_SESSION_COOKIE, "")
+        if sid:
+            store.logout(sid)
+        return JSONResponse({"header": {}, "body": {}})
+
+    if operation != "login" or service != m.JSON_REST_SVC_SESSION:
+        return JSONResponse(
+            {"header": {}, "body": {"error": f"JSON REST операция {service}/{operation} "
+                                             "не реализована в заглушке (используется XML RestServices)"}},
+            status_code=404)
+
+    creds = (payload.get("body") or {}).get("credentials") or {}
+    result = store.login(creds.get("user", ""), creds.get("password", ""))
+    if result is None:
+        return JSONResponse(
+            {"header": {}, "body": {"error": "Authentication failed: неверное имя пользователя или пароль"}},
+            status_code=500)
+    sid = store.create_session(result["login"])
+    resp = JSONResponse({"header": {}, "body": {}})
+    resp.set_cookie(m.REST_SESSION_COOKIE, sid, path="/")
+    return resp
 
 
 def _rest_fault(message: str) -> Response:

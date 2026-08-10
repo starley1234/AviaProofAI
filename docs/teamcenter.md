@@ -16,6 +16,36 @@
   `ASP.NET_SessionId`). Поддерживаются ОБА протокола, выбор — `TC_PROTOCOL`
   (`rest` по умолчанию | `soap`).
 
+## Авторизация (гибрид: JSON login + XML-операции — как в проде заказчика)
+
+В рабочем PHP-клиенте логин идёт через **JsonRestServices** (JSON), а данные —
+через **RestServices** (XML) с cookie из логина. Сервис повторяет эту связку
+по умолчанию (`TC_AUTH=json`):
+
+```
+POST {tc_url}/JsonRestServices/Core-2011-06-Session/login
+Content-Type: application/json
+{
+  "header": {"state": {}, "policy": {}},
+  "body": {
+    "credentials": {
+      "user": "infodba", "password": "…", "role": "",
+      "descrimator": "", "locale": "", "group": ""
+    }
+  }
+}
+```
+
+Ответ `Set-Cookie: ASP.NET_SessionId=…` — эта сессия используется всеми
+операциями RestServices. Замечания:
+
+* Поле `descrimator` (опечатка в рабочем коде; по документации —
+  `discriminator`) оставлено как в проверенном коде — на пустую строку TC
+  одинаково принимает оба варианта.
+* `TC_AUTH=xml` — если логин тоже делать XML-конвертом RestServices.
+* `TC_AUTH=session` + `TC_SESSION_ID` — если сессию уже получил PHP-клиент:
+  сервис не создаёт лишних сессий на сервере TC (лимит одновременных сессий!).
+
 ## REST-протокол (по умолчанию, проверен на проде)
 
 Формат — ровно тот, что в рабочем PHP-клиенте:

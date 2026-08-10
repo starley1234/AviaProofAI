@@ -48,7 +48,8 @@ class TeamcenterRestClient:
                  retries: int = 2, page_size: int = m.DEFAULT_PAGE_SIZE,
                  session_id: str = "", verify: bool = True,
                  max_content_bytes: int = 10 * 1024 * 1024,
-                 allow_external_files: bool = False):
+                 allow_external_files: bool = False,
+                 auth: str = "json"):
         self.base_url = base_url.rstrip("/") + "/"
         self.timeout = timeout
         self.connect_timeout = connect_timeout
@@ -57,10 +58,23 @@ class TeamcenterRestClient:
         self.session_id = session_id
         self.max_content_bytes = max_content_bytes
         self.allow_external_files = allow_external_files
+        # способ авторизации: json (JsonRestServices — как в PHP-клиенте заказчика,
+        # по умолчанию) | xml (RestServices login) | session (готовая TC_SESSION_ID)
+        self.auth = auth
         self._http = httpx.Client(timeout=(connect_timeout, timeout), verify=verify,
                                   follow_redirects=False)
         self._credentials: tuple[str, str, str, str] | None = None
         self._allowed_hosts = {httpx.URL(base_url).host}
+        if self.session_id:  # готовая сессия извне — сразу кладём в cookie-jar
+            self._apply_session_cookie(self.session_id)
+
+    def _apply_session_cookie(self, sid: str) -> None:
+        """Кладёт ASP.NET_SessionId в cookie-jar (как PHP: CURLOPT_COOKIE).
+
+        Нужно и для сессий извне (TC_AUTH=session), и как страховка после
+        логина, если сервер не прислал Set-Cookie."""
+        self._http.cookies.set(m.REST_SESSION_COOKIE, sid,
+                               domain=httpx.URL(self.base_url).host, path="/")
 
     # ─────────────── низкий уровень ───────────────
     def call(self, service: str, operation: str, inner: ET.Element,
@@ -114,6 +128,21 @@ class TeamcenterRestClient:
     # ─────────────── авторизация (cookie ASP.NET_SessionId) ───────────────
     def login(self, user: str, password: str, group: str = "", role: str = "") -> str:
         self._credentials = (user, password, group, role)
+        if self.auth == "session":
+            # готовая сессия извне (например, полученная PHP-клиентом)
+            if not self.session_id:
+                raise TcAuthError("TC_AUTH=session, но TC_SESSION_ID не задан")
+            self._apply_session_cookie(self.session_id)
+            return self.session_id
+        if self.auth == "json":
+            # проверенный формат заказчика: JsonRestServices/Core-2011-06-Session/login
+            from app.services.teamcenter.json_rest import json_rest_login
+            self.session_id = json_rest_login(self.base_url, user, password,
+                                              self._http, timeout=self.timeout,
+                                              retries=self.retries)
+            self._apply_session_cookie(self.session_id)
+            return self.session_id
+        # auth == "xml": RestServices/Core-2007-01-Session/login (XML-конверт)
         inner = _inner(m.REST_SVC_SESSION, "LoginInput")
         for key, val in (("user", user), ("password", password),
                          ("group", group), ("role", role)):

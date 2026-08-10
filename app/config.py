@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Протокол: rest (RestServices + cookie ASP.NET_SessionId — как в рабочем
     # PHP-клиенте) или soap (AuthenticationToken в SOAP-Header).
     tc_protocol: str = "rest"
+    # Способ авторизации REST: json (JsonRestServices/Core-2011-06-Session/login —
+    # проверенный формат заказчика, по умолчанию) | xml (RestServices login) |
+    # session (использовать готовую TC_SESSION_ID)
+    tc_auth: str = "json"
     tc_session_id: str = ""                      # готовая сессия REST (если уже получена извне)
     tc_verify_ssl: bool = True                   # проверять TLS-сертификат TC
     tc_max_content_bytes: int = 10 * 1024 * 1024  # лимит файла контента датасета

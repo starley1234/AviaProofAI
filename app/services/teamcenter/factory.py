@@ -22,6 +22,7 @@ def build_tc_client(settings: Settings | None = None, session_id: str | None = N
     )
     if s.tc_protocol == "rest":
         from app.services.teamcenter.rest_client import TeamcenterRestClient
-        return TeamcenterRestClient(session_id=session_id or s.tc_session_id, **common)
+        return TeamcenterRestClient(session_id=session_id or s.tc_session_id,
+                                    auth=s.tc_auth, **common)
     from app.services.teamcenter.client import TeamcenterSoapClient
     return TeamcenterSoapClient(**common)

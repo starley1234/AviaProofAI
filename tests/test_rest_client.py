@@ -39,8 +39,64 @@ def test_envelope_shape():
 
 
 def test_login_sets_session_cookie(rest_client):
-    assert rest_client.session_id.startswith("token-")
+    assert rest_client.session_id.startswith("session-")
     assert rest_client._http.cookies.get(m.REST_SESSION_COOKIE) == rest_client.session_id
+
+
+def test_login_uses_json_rest_by_default(rest_client):
+    """Авторизация — JsonRestServices (как в PHP-клиенте заказчика):
+    сессия вида session-... (создаётся JSON-логином заглушки)."""
+    assert rest_client.session_id.startswith("session-")
+
+
+def test_json_login_direct_format(rest_client):
+    """Прямой JSON REST login 1:1 с PHP-кодом: payload, cookie в Set-Cookie."""
+    import httpx as hx
+    from app.config import get_settings
+    s = get_settings()
+    url = f"{s.tc_url.rstrip('/')}/JsonRestServices/Core-2011-06-Session/login"
+    payload = {
+        "header": {"state": {}, "policy": {}},
+        "body": {"credentials": {"user": s.tc_user, "password": s.tc_password,
+                                 "role": "", "descrimator": "", "locale": "", "group": ""}},
+    }
+    r = hx.post(url, json=payload, headers={"Content-Type": "application/json"})
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "ASP.NET_SessionId=session-" in set_cookie
+
+
+def test_json_login_wrong_password():
+    """Неверный пароль через JSON REST -> TcAuthError (не ретраится)."""
+    from app.config import get_settings
+    s = get_settings()
+    c = TeamcenterRestClient(s.tc_url, timeout=10)
+    with pytest.raises(TcAuthError):
+        c.login("infodba", "wrong-password")
+    c.close()
+
+
+def test_auth_session_mode_uses_external_session():
+    """TC_AUTH=session: сервис принимает готовую сессию (как PHP передаёт sessionId)."""
+    from app.config import get_settings
+    s = get_settings()
+    # получаем сессию «извне» (как PHP-клиент)
+    probe = TeamcenterRestClient(s.tc_url, timeout=10)
+    external = probe.login(s.tc_user, s.tc_password)
+    probe.close()
+    c = TeamcenterRestClient(s.tc_url, timeout=10, auth="session", session_id=external)
+    items = c.find_items("SPEC-BRAKE-001", m.TYPE_SPECIFICATION)
+    assert len(items) == 1  # готовая сессия работает без логина
+    c.close()
+
+
+def test_auth_session_mode_without_session_fails():
+    from app.config import get_settings
+    s = get_settings()
+    c = TeamcenterRestClient(s.tc_url, timeout=10, auth="session", session_id="")
+    with pytest.raises(TcAuthError, match="TC_SESSION_ID"):
+        c.login("infodba", "infodba")
+    c.close()
 
 
 def test_login_wrong_password():

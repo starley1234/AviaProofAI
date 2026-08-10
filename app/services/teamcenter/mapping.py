@@ -130,6 +130,19 @@ DATASET_TYPE_TEXT = "TextDataset"
 CONTENT_MIME_HTML = "text/html"
 CONTENT_MIME_TEXT = "text/plain"
 
+# ═══════════════════════════ JSON REST (JsonRestServices) ═══════════════════════════
+# Проверенный рабочий формат авторизации заказчика (PHP-клиент):
+#   POST {tc_url}/JsonRestServices/Core-2011-06-Session/login
+#   {"header": {"state": {}, "policy": {}},
+#    "body": {"credentials": {"user": ..., "password": ..., "role": "",
+#                             "descrimator": "", "locale": "", "group": ""}}}
+# Сессия — cookie ASP.NET_SessionId из Set-Cookie (как и у XML RestServices).
+# Примечание: по документации поле называется discriminator; в рабочем коде
+# заказчика — «descrimator». На пустую строку TC не реагирует, оставлено как
+# в проверенном коде (см. json_rest.py).
+JSON_REST_PATH = "JsonRestServices"
+JSON_REST_SVC_SESSION = "Core-2011-06-Session"
+
 # ═══════════════════════════ REST-протокол (RestServices) ═══════════════════════════
 # Проверенный рабочий формат (см. koseven-клиент заказчика):
 #   POST {tc_url}/RestServices/{ServiceName}/{OperationName}
