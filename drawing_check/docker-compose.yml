@@ -1,0 +1,54 @@
+# Сервис «Проверка чертежа»: UI (8501) + API (8502).
+#
+# ВАЖНО про порты:
+#   - API слушает 0.0.0.0:8502 и опубликован как 8502:8502;
+#   - UI внутри docker-сети обращается к API по имени сервиса backend
+#     (http://backend:8502) — это ВНУТРЕННИЙ адрес;
+#   - из браузера доступен только ВНЕШНИЙ адрес http://localhost:8502.
+# Если UI не находит API — проверьте, что UI использует внешний адрес
+# (см. вкладку «Диагностика»: кнопка «Проверить соединение»).
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: drawing_check/Dockerfile
+    command: uvicorn drawing_check.server:app --host 0.0.0.0 --port 8502
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: 8502
+      DOCKER: "1"
+      # Модель (OpenAI-совместимый endpoint). Пусто -> эвристический режим.
+      MODEL_BASE_URL: ${MODEL_BASE_URL:-}
+      MODEL_API_KEY: ${MODEL_API_KEY:-}
+      MODEL_NAME: ${MODEL_NAME:-unsloth/gemma-4-12b-it}
+      MODEL_CTX: ${MODEL_CTX:-8192}
+      OCR_MODE: ${OCR_MODE:-auto}
+      OCR_ENSEMBLE: ${OCR_ENSEMBLE:-true}
+      OCR_MAX_SIDE: ${OCR_MAX_SIDE:-768}
+    ports:
+      - "8502:8502"
+    volumes:
+      - dc_logs:/app/drawing_check/data/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8502/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ui:
+    build:
+      context: ..
+      dockerfile: drawing_check/Dockerfile
+    command: streamlit run drawing_check/ui.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      DOCKER: "1"
+      API_URL_INTERNAL: http://backend:8502
+      API_URL_EXTERNAL: http://localhost:8502
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  dc_logs:
