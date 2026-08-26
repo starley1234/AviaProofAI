@@ -1,0 +1,12 @@
+# AviaProofAI — аналитический цифровой двойник требований (Teamcenter 11 + LLM)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+pydantic>=2.6
+pydantic-settings>=2.2
+httpx>=0.27
+PyYAML>=6.0
+
+# Тесты
+pytest>=8.0

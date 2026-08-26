@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env / secrets
+.env
+*.local
+
+# Runtime data (PG data dirs, logs)
+pgdata/
+*.log
+runs/
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+drawing_check/data/

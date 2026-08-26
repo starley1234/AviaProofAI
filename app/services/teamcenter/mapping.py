@@ -1,0 +1,200 @@
+"""Teamcenter 11 (SOA) — ОПИСАНИЕ ФОРМАТА ОБМЕНА. ЕДИНСТВЕННОЕ МЕСТО ПРАВКИ.
+
+Всё, что касается «как именно Teamcenter отвечает», собрано здесь:
+имена SOA-сервисов, операций, элементов запросов/ответов.
+
+Если реальный TC 11 в вашей инсталляции отдаёт что-то в другом формате —
+правьте ТОЛЬКО этот файл: и синхронизация (app/services/teamcenter/*),
+и заглушка (stub_tc/*) строятся на этих константах, поэтому тесты сразу
+покажут, что формат поменялся.
+
+Проверено на прототипе: TC 11.0, URL http://org-tc2:8080/tc/services/
+"""
+from __future__ import annotations
+
+# ═══════════════════════════ Транспорт SOAP ═══════════════════════════
+SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
+# Токен авторизации кладётся в SOAP-Header (см. soap.py -> _envelope)
+AUTH_TOKEN_NS = "http://www.teamcenter.com/soa/common/AuthenticationToken"
+AUTH_TOKEN_TAG = "AuthenticationToken"
+
+# ═══════════════════════════ Имена SOA-сервисов ═══════════════════════════
+SVC_SESSION = "Core-2007-01-Session"          # вход/выход
+SVC_DATA_MGMT = "Core-2006-03-DataManagement" # getProperties — атрибуты любого объекта
+SVC_ITEM_FINDER = "Item-2006-06-Finder"       # поиск объектов (спецификаций)
+SVC_ITEM = "Item-2006-06-Item"                # атрибуты Item/ItemRevision
+SVC_STRUCTURE = "Structure-2007-01-Structure"  # обход дерева спецификации
+SVC_REQUIREMENT = "Requirement-2011-06-Requirement"  # сервис RMS (зарезервирован)
+SVC_DATASET = "Dataset-2006-06-Dataset"       # датасеты (контент IMAN_specification)
+SVC_FILE = "FileManagement-2007-01-File"      # скачивание файлов датасетов
+SVC_RELATION = "Relation-2006-06-Relation"    # связи (TC_Requirement_Trace_Relation)
+
+# ═══════════════════════════ Операции и их элементы ═══════════════════════════
+# Формат: OP = ("имя_операции", {"имя_параметра": ...}) — параметры см. в client.py
+
+# --- Session/login: вход в TC ---
+OP_LOGIN = "login"
+# Параметры запроса (в порядке следования в SOAP-теле):
+LOGIN_PARAMS = ("user", "password", "group", "role", "discriminator")
+
+# --- Session/logout ---
+OP_LOGOUT = "logout"
+
+# --- ItemFinder/findItems: поиск объекта по имени ---
+OP_FIND_ITEMS = "findItems"
+# Запрос: <findItems><criteria><name>..</name><type>..</type></criteria></findItems>
+# Ответ:  <findItemsResponse><found><item>...</item></found></findItemsResponse>
+# Путь к списку найденных Item (по localname, без учёта namespace):
+FIND_ITEMS_PATH = ("findItemsResponse", "found", "item")
+
+# --- Item/getItemRevisions: атрибуты ревизии ---
+OP_GET_ITEM_REVISIONS = "getItemRevisions"
+# Запрос: <getItemRevisions><input><item>UID_ITEM</item></input></getItemRevisions>
+# Ответ:  <getItemRevisionsResponse><item_revision>...</item_revision></getItemRevisionsResponse>
+REVISIONS_PATH = ("getItemRevisionsResponse", "item_revision")
+
+# --- DataManagement/getProperties: атрибуты ЛЮБОГО объекта по uid (разделы, спецификация) ---
+OP_GET_PROPERTIES = "getProperties"
+# Запрос: <getProperties><input><object>UID</object><attributes><name>attr</name>...</attributes></input></getProperties>
+#         (attributes опционален: без него возвращаются все атрибуты)
+# Ответ:  <getPropertiesResponse><output><object uid=..>...атрибуты...</object></output></getPropertiesResponse>
+GET_PROPERTIES_PATH = ("getPropertiesResponse", "output", "object")
+
+# --- Requirement/getRequirements: атрибуты RequirementRevision (RMS) ---
+OP_GET_REQUIREMENTS = "getRequirements"
+# Запрос: <getRequirements><requirement_revision>UID</requirement_revision>...</getRequirements>
+#         (элемент повторяется — по одному на каждую ревизию)
+# Ответ:  <getRequirementsResponse><requirement>...</requirement></getRequirementsResponse>
+REQUIREMENTS_PATH = ("getRequirementsResponse", "requirement")
+
+# --- Structure/getChildren: дети узла (разделы/требования) ---
+OP_GET_CHILDREN = "getChildren"
+# Запрос: <getChildren><input><child_uid>UID</child_uid></input></getChildren>
+# Ответ:  <getChildrenResponse><output>...</output></getChildrenResponse>
+CHILDREN_PATH = ("getChildrenResponse", "output")
+
+# --- Dataset/findDatasets: датасеты объекта (контент через IMAN_specification) ---
+OP_FIND_DATASETS = "findDatasets"
+# Запрос: <findDatasets><input><object>UID</object><relation_name>IMAN_specification</relation_name></input></findDatasets>
+# Ответ:  <findDatasetsResponse><output><dataset>...</dataset></output></findDatasetsResponse>
+DATASETS_PATH = ("findDatasetsResponse", "output", "dataset")
+
+# --- Dataset/getContents: файлы датасета ---
+OP_GET_CONTENTS = "getContents"
+# Запрос: <getContents><input><dataset>UID</dataset></input></getContents>
+CONTENTS_PATH = ("getContentsResponse", "output")
+
+# --- File/getFileReadTicket: URL для скачивания файла ---
+OP_GET_FILE_TICKET = "getFileReadTicket"
+# Запрос: <getFileReadTicket><file>UID</file><target>..</target></getFileReadTicket>
+TICKET_PATH = ("getFileReadTicketResponse", "ticket")
+
+# --- Relation/findRelations: связи объекта (трассируемость) ---
+OP_FIND_RELATIONS = "findRelations"
+# Запрос (исходящие):   <findRelations><primary_object>UID</primary_object><relation_type>..</relation_type></findRelations>
+# Запрос (входящие):    <findRelations><secondary_object>UID</secondary_object><relation_type>..</relation_type></findRelations>
+# Ответ:                <findRelationsResponse><output><relation>...</relation></output></findRelationsResponse>
+RELATIONS_PATH = ("findRelationsResponse", "output", "relation")
+
+# --- Item/setProperties: ЗАПИСЬ атрибутов (write-back правки в TC) ---
+OP_SET_PROPERTIES = "setProperties"
+# Запрос: <setProperties><input><object>UID</object><properties><object_string>..</object_string></properties></input></setProperties>
+SET_PROPERTIES_PATH = ("setPropertiesResponse", "output")
+
+# ═══════════════════════════ Имена атрибутов объектов TC ═══════════════════════════
+# (localname элементов внутри <item_revision> / <item>)
+ATTR_UID = "uid"                    # атрибут uid у элементов-объектов
+ATTR_ITEM_ID = "item_id"
+ATTR_ITEM_REVISION_ID = "item_revision_id"
+ATTR_OBJECT_NAME = "object_name"
+ATTR_OBJECT_STRING = "object_string"   # текст требования (RMS хранит его здесь)
+ATTR_TYPE_NAME = "type_name"
+ATTR_OWNING_USER = "owning_user"
+ATTR_LAST_MODIFIED = "last_modified"
+
+# Типы объектов (type_name), с которыми работает синхронизация
+TYPE_SPECIFICATION = "Specification"
+TYPE_SPEC_SECTION = "SpecSection"
+TYPE_REQUIREMENT = "RequirementRevision"
+
+# ═══════════════════════════ Связи ═══════════════════════════
+REL_SPEC_CONTENT = "IMAN_specification"              # контент (HTML-датасет)
+REL_TRACE = "TC_Requirement_Trace_Relation"          # трассируемость требований
+REL_SPEC_REFERENCE = "TC_Requirement_Spec_Reference" # раздел -> требование
+
+# ═══════════════════════════ Типы датасетов с текстовым контентом ═══════════════════════════
+DATASET_TYPE_HTML = "HTMLDataset"
+DATASET_TYPE_TEXT = "TextDataset"
+
+# Формат файла контента (расширение) -> MIME, по которому решаем, как читать
+CONTENT_MIME_HTML = "text/html"
+CONTENT_MIME_TEXT = "text/plain"
+
+# ═══════════════════════════ JSON REST (JsonRestServices) ═══════════════════════════
+# Проверенный рабочий формат авторизации заказчика (PHP-клиент):
+#   POST {tc_url}/JsonRestServices/Core-2011-06-Session/login
+#   {"header": {"state": {}, "policy": {}},
+#    "body": {"credentials": {"user": ..., "password": ..., "role": "",
+#                             "descrimator": "", "locale": "", "group": ""}}}
+# Сессия — cookie ASP.NET_SessionId из Set-Cookie (как и у XML RestServices).
+# Примечание: по документации поле называется discriminator; в рабочем коде
+# заказчика — «descrimator». На пустую строку TC не реагирует, оставлено как
+# в проверенном коде (см. json_rest.py).
+JSON_REST_PATH = "JsonRestServices"
+JSON_REST_SVC_SESSION = "Core-2011-06-Session"
+
+# ═══════════════════════════ REST-протокол (RestServices) ═══════════════════════════
+# Проверенный рабочий формат (см. koseven-клиент заказчика):
+#   POST {tc_url}/RestServices/{ServiceName}/{OperationName}
+#   <RequestEnvelope xmlns="http://teamcenter.com/Schemas/Soa/2006-09/ClientContext">
+#     <header/><body><bodystring><![CDATA[ <OperationNameInput ...>...</OperationNameInput> ]]></bodystring></body>
+#   </RequestEnvelope>
+#   Аутентификация: cookie ASP.NET_SessionId (выдаётся login'ом).
+# Ответ: <ResponseEnvelope><header/><body><bodystring><![CDATA[ <OperationNameResponse>...]]></bodystring></body></ResponseEnvelope>
+REST_ENVELOPE_NS = "http://teamcenter.com/Schemas/Soa/2006-09/ClientContext"
+REST_PATH = "RestServices"
+REST_SESSION_COOKIE = "ASP.NET_SessionId"
+
+# REST-версии сервисов (отличаются от SOA-версий!):
+REST_SVC_SESSION = "Core-2007-01-Session"            # REST login/logout — то же имя
+REST_SVC_DATA_MGMT = "Core-2008-06-DataManagement"   # REST: 2008-06 (в SOA — 2006-03!)
+REST_SVC_ITEM_FINDER = "Item-2006-06-Finder"
+REST_SVC_ITEM = "Item-2006-06-Item"
+REST_SVC_STRUCTURE = "Structure-2007-01-Structure"
+REST_SVC_REQUIREMENT = "Requirement-2011-06-Requirement"
+REST_SVC_DATASET = "Dataset-2006-06-Dataset"
+REST_SVC_FILE = "FileManagement-2007-01-File"
+REST_SVC_RELATION = "Relation-2006-06-Relation"
+
+# Имена операций REST (URL-часть, PascalCase в bodystring):
+REST_OP_LOGIN = "login"
+REST_OP_LOGOUT = "logout"
+REST_OP_GET_ITEM_AND_RELATED = "getItemAndRelatedObjects"   # проверено на проде
+REST_OP_GET_PROPERTIES = "getProperties"
+REST_OP_GET_REQUIREMENTS = "getRequirements"
+REST_OP_GET_CHILDREN = "getChildren"
+REST_OP_FIND_DATASETS = "findDatasets"
+REST_OP_GET_CONTENTS = "getContents"
+REST_OP_GET_FILE_TICKET = "getFileReadTicket"
+REST_OP_FIND_RELATIONS = "findRelations"
+REST_OP_SET_PROPERTIES = "setProperties"
+
+# Пути ответов REST (localname, регистр — PascalCase).
+# ВАЖНО: пути заданы ОТ КОРНЯ ОТВЕТА (сам корневой элемент не включается):
+#   <GetItemAndRelatedObjectsResponse> — корень,
+#   ("item",) — его прямые дети.
+# Если реальный TC отвечает иначе — править ЗДЕСЬ.
+REST_ITEM_PATH = ("item",)
+REST_GET_PROPERTIES_PATH = ("output", "object")
+REST_GET_REQUIREMENTS_PATH = ("requirement",)
+REST_CHILDREN_PATH = ("output",)
+REST_DATASETS_PATH = ("output", "dataset")
+REST_CONTENTS_PATH = ("output",)
+REST_TICKET_PATH = ("ticket",)
+REST_RELATIONS_PATH = ("output", "relation")
+REST_SET_PROPERTIES_PATH = ("output",)
+
+# Пагинация getChildren (большие спецификации): параметры внутри input
+PAGE_SIZE_PARAM = "page_size"      # сколько детей за раз (сервер вернёт не больше)
+START_INDEX_PARAM = "start_index"  # с какого ребёнка продолжать (0, page_size, ...)
+DEFAULT_PAGE_SIZE = 500

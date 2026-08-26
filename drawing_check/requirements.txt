@@ -1,0 +1,10 @@
+# Сервис «Проверка чертежа» (drawing_check)
+streamlit>=1.36
+pillow>=10.0
+python-multipart>=0.0.9
+# httpx уже в общих requirements.txt
+
+# Опциональные OCR-движки (ставятся по необходимости):
+#   easyocr>=1.7        (torch, CPU/GPU)
+#   paddleocr>=2.7
+#   tesseract (системный пакет: apt install tesseract-ocr tesseract-ocr-rus)
